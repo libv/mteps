@@ -36,30 +36,6 @@
 
 static struct input_dev *mteps_dev;
 
-static int __init
-mteps_init(void)
-{
-	mteps_dev = input_allocate_device();
-	if (!mteps_dev)
-		return -ENOMEM;
-
-	mteps_dev->evbit[0] = BIT_MASK(EV_ABS) | BIT_MASK(EV_KEY);
-	mteps_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-
-	input_set_abs_params(mteps_dev, ABS_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
-	input_set_abs_params(mteps_dev, ABS_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
-
-	mteps_dev->name = "MTEPS";
-	mteps_dev->phys = "mteps/input0";
-
-	input_mt_init_slots(mteps_dev, MAX_CONTACTS, INPUT_MT_DIRECT);
-
-	input_set_abs_params(mteps_dev, ABS_MT_POSITION_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
-	input_set_abs_params(mteps_dev, ABS_MT_POSITION_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
-
-	return input_register_device(mteps_dev);
-}
-
 #if 0
 static void
 execute_command(char command, int arg1) {
@@ -110,10 +86,52 @@ execute_command(char command, int arg1) {
 }
 #endif
 
+static int
+mteps_input_init(void)
+{
+	mteps_dev = input_allocate_device();
+	if (!mteps_dev)
+		return -ENOMEM;
+
+	mteps_dev->evbit[0] = BIT_MASK(EV_ABS) | BIT_MASK(EV_KEY);
+	mteps_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+
+	input_set_abs_params(mteps_dev, ABS_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
+	input_set_abs_params(mteps_dev, ABS_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
+
+	mteps_dev->name = "MTEPS";
+	mteps_dev->phys = "mteps/input0";
+
+	input_mt_init_slots(mteps_dev, MAX_CONTACTS, INPUT_MT_DIRECT);
+
+	input_set_abs_params(mteps_dev, ABS_MT_POSITION_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
+	input_set_abs_params(mteps_dev, ABS_MT_POSITION_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
+
+	return input_register_device(mteps_dev);
+}
+
+static void
+mteps_input_exit(void)
+{
+	input_unregister_device(mteps_dev);
+}
+
+static int __init
+mteps_init(void)
+{
+	int ret;
+
+	ret = mteps_input_init();
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 static void __exit
 mteps_exit(void)
 {
-	input_unregister_device(mteps_dev);
+	mteps_input_exit();
 }
 
 #define MODNAME "mteps"
