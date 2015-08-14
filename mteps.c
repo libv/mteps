@@ -26,6 +26,7 @@
 
 #include <linux/input/mt.h>
 #include <linux/module.h>
+#include <linux/hrtimer.h>
 
 #define ABS_X_MIN	0
 #define ABS_X_MAX	1024
@@ -35,6 +36,52 @@
 #define MAX_CONTACTS 10
 
 static struct input_dev *mteps_dev;
+static struct hrtimer mteps_hrtimer[1];
+static ktime_t mteps_ktime;
+static int mteps_rate = 120; /* should be a module option */
+
+static enum hrtimer_restart
+mteps_hrtimer_callback(struct hrtimer *hrtimer)
+{
+	static int mteps_count = 0;
+
+	pr_info("count = %d\n", mteps_count);
+
+	mteps_count++;
+	if (mteps_count == mteps_rate)
+		mteps_count = 0;
+
+	hrtimer_forward_now(hrtimer, mteps_ktime);
+
+	return HRTIMER_RESTART;
+}
+
+static int
+mteps_hrtimer_init(void)
+{
+	int ret;
+
+	pr_info("%s: rate %d -> %ldnsec\n", __func__,
+		mteps_rate, NSEC_PER_SEC / mteps_rate);
+
+	mteps_ktime = ktime_set(0, NSEC_PER_SEC / mteps_rate);
+
+	hrtimer_init(mteps_hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+
+	mteps_hrtimer->function = mteps_hrtimer_callback;
+
+	ret = hrtimer_start(mteps_hrtimer, mteps_ktime, HRTIMER_MODE_REL);
+	if (ret)
+		return ret;
+
+        return 0;
+}
+
+static void
+mteps_hrtimer_exit(void)
+{
+	hrtimer_cancel(mteps_hrtimer);
+}
 
 #if 0
 static void
@@ -104,8 +151,10 @@ mteps_input_init(void)
 
 	input_mt_init_slots(mteps_dev, MAX_CONTACTS, INPUT_MT_DIRECT);
 
-	input_set_abs_params(mteps_dev, ABS_MT_POSITION_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
-	input_set_abs_params(mteps_dev, ABS_MT_POSITION_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
+	input_set_abs_params(mteps_dev,
+			     ABS_MT_POSITION_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
+	input_set_abs_params(mteps_dev,
+			     ABS_MT_POSITION_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
 
 	return input_register_device(mteps_dev);
 }
@@ -125,12 +174,19 @@ mteps_init(void)
 	if (ret)
 		return ret;
 
+	ret = mteps_hrtimer_init();
+	if (ret) {
+		mteps_input_exit();
+		return ret;
+	}
+
 	return 0;
 }
 
 static void __exit
 mteps_exit(void)
 {
+	mteps_hrtimer_exit();
 	mteps_input_exit();
 }
 
