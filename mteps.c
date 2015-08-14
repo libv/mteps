@@ -36,8 +36,6 @@
 #define ABS_Y_MIN	0
 #define ABS_Y_MAX	1024
 
-#define MAX_CONTACTS 10
-
 static struct input_dev *mteps_dev;
 
 static struct hrtimer mteps_hrtimer[1];
@@ -47,26 +45,24 @@ static int mteps_rate = MTEPS_FREQUENCY; /* should be a module option */
 static struct workqueue_struct *mteps_wq;
 static struct work_struct mteps_work[1];
 
-#define MTEPS_DIRECTION_EAST  0
-#define MTEPS_DIRECTION_SOUTH 1
-#define MTEPS_DIRECTION_WEST  2
-#define MTEPS_DIRECTION_NORTH 3
-#define MTEPS_DIRECTION_COUNT 4
-
 static void
 mteps_work_func(struct work_struct *work)
 {
 	static int mteps_count = 0;
-	static int mteps_direction = 0;
+	static int mteps_line_count = 0;
 
-	pr_info("(%d, %d)\n", mteps_direction, mteps_count);
+	input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_X,
+		    (ABS_X_MAX / 4) + mteps_count);
+	input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_Y,
+		    (2 + mteps_line_count) * (ABS_Y_MAX / 8));
+	input_mt_sync(mteps_dev);
 
 	mteps_count++;
 	if (mteps_count == mteps_rate) {
 		mteps_count = 0;
-		mteps_direction++;
-		if (mteps_direction == MTEPS_DIRECTION_COUNT)
-			mteps_direction =  MTEPS_DIRECTION_EAST;
+		mteps_line_count++;
+		if (mteps_line_count == 4)
+			mteps_line_count = 0;
 	}
 }
 
@@ -103,9 +99,6 @@ mteps_hrtimer_init(void)
 {
 	int ret;
 
-	pr_info("%s: rate %d -> %ldnsec\n", __func__,
-		mteps_rate, NSEC_PER_SEC / mteps_rate);
-
 	mteps_ktime = ktime_set(0, NSEC_PER_SEC / mteps_rate);
 
 	hrtimer_init(mteps_hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -124,56 +117,6 @@ mteps_hrtimer_exit(void)
 {
 	hrtimer_cancel(mteps_hrtimer);
 }
-
-#if 0
-static void
-execute_command(char command, int arg1) {
-	switch(command) {
-        case 'x':
-		input_report_abs(mteps_dev, ABS_X, arg1);
-		break;
-        case 'y':
-		input_report_abs(mteps_dev, ABS_Y, arg1);
-		break;
-        case 'd':
-		input_report_key(mteps_dev, BTN_TOUCH, 1);
-		break;
-        case 'u':
-		input_report_key(mteps_dev, BTN_TOUCH, 0);
-		break;
-        case 's':
-		input_mt_slot(mteps_dev, arg1);
-		break;
-        case 'a':
-		input_mt_report_slot_state(mteps_dev, MT_TOOL_FINGER, arg1);
-		break;
-        case 'e':
-		input_mt_report_pointer_emulation(mteps_dev, true);
-		break;
-        case 'X':
-		input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_X, arg1);
-		break;
-        case 'Y':
-		input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_Y, arg1);
-		break;
-        case 'S':
-	        input_sync(mteps_dev);
-		break;
-        case 'M':
-		input_mt_sync(mteps_dev);
-		break;
-        case 'T':
-		input_event(mteps_dev, EV_ABS, ABS_MT_TRACKING_ID, arg1);
-		break;
-        default:
-		if ((command >= 0x30) && (command <= 0x3b))
-			input_event(mteps_dev, EV_ABS, command, arg1);
-		else
-			pr_err("<4>mteps: Unknown command %c with arg %d\n",
-			       command, arg1);
-	}
-}
-#endif
 
 static int
 mteps_input_init(void)
