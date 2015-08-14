@@ -27,6 +27,9 @@
 #include <linux/input/mt.h>
 #include <linux/module.h>
 #include <linux/hrtimer.h>
+#include <linux/workqueue.h>
+
+#define MTEPS_FREQUENCY 120
 
 #define ABS_X_MIN	0
 #define ABS_X_MAX	1024
@@ -36,20 +39,59 @@
 #define MAX_CONTACTS 10
 
 static struct input_dev *mteps_dev;
+
 static struct hrtimer mteps_hrtimer[1];
 static ktime_t mteps_ktime;
-static int mteps_rate = 120; /* should be a module option */
+static int mteps_rate = MTEPS_FREQUENCY; /* should be a module option */
+
+static struct workqueue_struct *mteps_wq;
+static struct work_struct mteps_work[1];
+
+#define MTEPS_DIRECTION_EAST  0
+#define MTEPS_DIRECTION_SOUTH 1
+#define MTEPS_DIRECTION_WEST  2
+#define MTEPS_DIRECTION_NORTH 3
+#define MTEPS_DIRECTION_COUNT 4
+
+static void
+mteps_work_func(struct work_struct *work)
+{
+	static int mteps_count = 0;
+	static int mteps_direction = 0;
+
+	pr_info("(%d, %d)\n", mteps_direction, mteps_count);
+
+	mteps_count++;
+	if (mteps_count == mteps_rate) {
+		mteps_count = 0;
+		mteps_direction++;
+		if (mteps_direction == MTEPS_DIRECTION_COUNT)
+			mteps_direction =  MTEPS_DIRECTION_EAST;
+	}
+}
+
+static int
+mteps_wq_init(void)
+{
+	mteps_wq = create_singlethread_workqueue("mteps");
+	if (!mteps_wq)
+		return -ENOMEM;
+
+	INIT_WORK(mteps_work, mteps_work_func);
+
+	return 0;
+}
+
+static void
+mteps_wq_exit(void)
+{
+	destroy_workqueue(mteps_wq);
+}
 
 static enum hrtimer_restart
 mteps_hrtimer_callback(struct hrtimer *hrtimer)
 {
-	static int mteps_count = 0;
-
-	pr_info("count = %d\n", mteps_count);
-
-	mteps_count++;
-	if (mteps_count == mteps_rate)
-		mteps_count = 0;
+	queue_work(mteps_wq, mteps_work);
 
 	hrtimer_forward_now(hrtimer, mteps_ktime);
 
@@ -174,8 +216,15 @@ mteps_init(void)
 	if (ret)
 		return ret;
 
+	ret = mteps_wq_init();
+	if (ret) {
+		mteps_input_exit();
+		return ret;
+	}
+
 	ret = mteps_hrtimer_init();
 	if (ret) {
+		mteps_wq_exit();
 		mteps_input_exit();
 		return ret;
 	}
@@ -187,6 +236,7 @@ static void __exit
 mteps_exit(void)
 {
 	mteps_hrtimer_exit();
+	mteps_wq_exit();
 	mteps_input_exit();
 }
 
