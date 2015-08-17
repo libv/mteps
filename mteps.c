@@ -29,7 +29,7 @@
 #include <linux/hrtimer.h>
 #include <linux/workqueue.h>
 
-#define MTEPS_FREQUENCY 120
+#define MTEPS_FREQUENCY 1024
 
 #define ABS_X_MIN	0
 #define ABS_X_MAX	1024
@@ -48,22 +48,33 @@ static struct work_struct mteps_work[1];
 static void
 mteps_work_func(struct work_struct *work)
 {
-	static int mteps_count = 0;
-	static int mteps_line_count = 0;
+	static int mteps_count = 0, x_total = 0, y_total = 0;
 
-	input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_X,
-		    (ABS_X_MAX / 4) + mteps_count);
-	input_event(mteps_dev, EV_ABS, ABS_MT_POSITION_Y,
-		    (2 + mteps_line_count) * (ABS_Y_MAX / 8));
-	input_mt_sync(mteps_dev);
+	if (!mteps_count)
+		input_report_key(mteps_dev, BTN_LEFT, 1);
 
 	mteps_count++;
-	if (mteps_count == mteps_rate) {
+
+	if (mteps_count == (mteps_rate >> 4)) {
+		input_report_key(mteps_dev, BTN_LEFT, 0);
+
+		input_report_rel(mteps_dev, REL_X, -x_total);
+		x_total = 0;
+
+		input_report_rel(mteps_dev, REL_Y, 10);
+		y_total += 10;
+		if (y_total == 160) {
+			input_report_rel(mteps_dev, REL_Y, -160);
+			y_total = 0;
+		}
+
 		mteps_count = 0;
-		mteps_line_count++;
-		if (mteps_line_count == 4)
-			mteps_line_count = 0;
+	} else {
+		input_report_rel(mteps_dev, REL_X, 1);
+		x_total++;
 	}
+
+	input_sync(mteps_dev);
 }
 
 static int
@@ -125,21 +136,16 @@ mteps_input_init(void)
 	if (!mteps_dev)
 		return -ENOMEM;
 
-	mteps_dev->evbit[0] = BIT_MASK(EV_ABS) | BIT_MASK(EV_KEY);
-	mteps_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-
-	input_set_abs_params(mteps_dev, ABS_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
-	input_set_abs_params(mteps_dev, ABS_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
+	mteps_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_REL);
+	mteps_dev->keybit[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_LEFT) |
+		BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
+	mteps_dev->relbit[0] = BIT_MASK(REL_X) | BIT_MASK(REL_Y);
+	mteps_dev->keybit[BIT_WORD(BTN_MOUSE)] |= BIT_MASK(BTN_SIDE) |
+		BIT_MASK(BTN_EXTRA);
+	mteps_dev->relbit[0] |= BIT_MASK(REL_WHEEL);
 
 	mteps_dev->name = "MTEPS";
 	mteps_dev->phys = "mteps/input0";
-
-	input_mt_init_slots(mteps_dev, MAX_CONTACTS, INPUT_MT_DIRECT);
-
-	input_set_abs_params(mteps_dev,
-			     ABS_MT_POSITION_X, ABS_X_MIN, ABS_X_MAX, 0, 0);
-	input_set_abs_params(mteps_dev,
-			     ABS_MT_POSITION_Y, ABS_Y_MIN, ABS_Y_MAX, 0, 0);
 
 	return input_register_device(mteps_dev);
 }
