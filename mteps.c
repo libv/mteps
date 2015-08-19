@@ -51,28 +51,21 @@ mteps_work_func(struct work_struct *work)
 	static int mteps_count = 0, x_total = 0, y_total = 0;
 
 	if (!mteps_count)
-		input_report_key(mteps_dev, BTN_LEFT, 1);
+		input_report_key(mteps_dev, BTN_TOUCH, 1);
 
 	mteps_count++;
 
 	if (mteps_count == (mteps_rate >> 4)) {
-		input_report_key(mteps_dev, BTN_LEFT, 0);
-
-		input_report_rel(mteps_dev, REL_X, -x_total);
-		x_total = 0;
-
-		input_report_rel(mteps_dev, REL_Y, 10);
-		y_total += 10;
-		if (y_total == 160) {
-			input_report_rel(mteps_dev, REL_Y, -160);
-			y_total = 0;
-		}
-
+		input_report_key(mteps_dev, BTN_TOUCH, 0);
 		mteps_count = 0;
-	} else {
-		input_report_rel(mteps_dev, REL_X, 1);
-		x_total++;
+
+		y_total += 10;
+		if (y_total == 160)
+			y_total = 0;
 	}
+
+	input_report_abs(mteps_dev, ABS_X, mteps_count);
+	input_report_abs(mteps_dev, ABS_Y, y_total);
 
 	input_sync(mteps_dev);
 }
@@ -136,15 +129,18 @@ mteps_input_init(void)
 	if (!mteps_dev)
 		return -ENOMEM;
 
-	mteps_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_REL);
-	mteps_dev->keybit[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_LEFT) |
-		BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
-	mteps_dev->relbit[0] = BIT_MASK(REL_X) | BIT_MASK(REL_Y);
-	mteps_dev->keybit[BIT_WORD(BTN_MOUSE)] |= BIT_MASK(BTN_SIDE) |
-		BIT_MASK(BTN_EXTRA);
-	mteps_dev->relbit[0] |= BIT_MASK(REL_WHEEL);
+	mteps_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
 
-	mteps_dev->name = "MTEPS";
+	mteps_dev->keybit[0] = BIT_MASK(BTN_TOUCH);
+
+	mteps_dev->absbit[0] =
+		BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) | BIT_MASK(ABS_PRESSURE);
+
+	input_set_abs_params(mteps_dev, ABS_X, 0, ABS_X_MAX, 0, 0);
+	input_set_abs_params(mteps_dev, ABS_Y, 0, ABS_Y_MAX, 0, 0);
+	input_set_abs_params(mteps_dev, ABS_PRESSURE, 0, 1, 0, 0);
+
+	mteps_dev->name = "eGalax Touch Screen";
 	mteps_dev->phys = "mteps/input0";
 
 	return input_register_device(mteps_dev);
